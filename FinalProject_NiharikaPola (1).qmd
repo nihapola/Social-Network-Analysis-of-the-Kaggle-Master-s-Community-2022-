@@ -1,0 +1,611 @@
+---
+title: "Social Networks__Final Project"
+author: "Niharika Pola"
+description: "Social Networks__Final Project"
+date: "05/01/2022"
+format: html
+editor: visual
+---
+
+```{r, warning=FALSE}
+#loading required packages
+library(readr)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(psych)
+library(igraph)
+```
+
+```{r, warning=FALSE}
+#reading the raw data
+data_2022 <- read.csv("DataFolder_NiharikaPola/kaggle_survey_2022_responses.csv")
+dim(data_2022)
+```
+
+## Social Network analysis of the Master's Degree Kagglers 2022
+
+### Introduction
+
+Master's degrees have gained significant prominence worldwide, particularly in the field of AI and data science. According to recent statistics, the number of students pursuing master's degrees has been steadily increasing, with a global growth rate of around 6% per year. In the realm of AI and data science, master's programs have seen exponential growth, with a substantial rise in enrollment over the past decade. This surge is attributed to the rising demand for skilled professionals in the field and the recognition of the specialized knowledge and practical skills that a master's degree provides. The prominence of master's degrees in AI and data science is reflected in the industry, where employers actively seek graduates with this level of education to meet the growing need for experts in handling and extracting insights from vast amounts of data using advanced AI techniques.
+
+In this project, I aim to analyze the network of Master's community by using 2022 Kaggle Machine Learning & Data Science Survey. I focused on socio-demographic distribution of the master's community along with few of the questions that are based on machine learning skills and methods of the community world-wide. This code book highlights the preparation of the data, socio-demographic analysis, network analysis and visualization, network statistics and hypothesis testing in the form of answers to the questions that are requested in the course.
+
+#### 1. About the Data
+
+The original data set is from 2022 Kaggle Machine Learning & Data Science Survey. The truly comprehensive view of the state of data science and machine learning. The survey was live from 09/16/2022 to 10/16/2022, and after cleaning the data we finished with 23,997 responses!
+
+The raw data consists of 23998 rows and 296 columns with various socio-demographic questions (Age, Gender, Country, Occupation, Salary etc) and rest are focused on understanding various machine learning, AI and data science skills, methods, platforms used by the kaggle community. All the inferences that are stated in this codebook can describe only Kaggle users and should not be extrapolated to the broader population of data analysts.
+
+As mentioned above, my study aims to understand the socio-demographic distribution of the Master's community from this survey data and using network analysis to find out the machine learning skills distribution of this community using network analysis.
+
+The following are the columns that are considered for analysis.
+
+Q2: What is your age (# years)?
+
+Q3: What is your gender?
+
+Q4: In which country do you currently reside?
+
+Q5: Are you currently a student? (high school, university, or graduate)
+
+Q8: What is the highest level of formal education that you have attained or plan to attain within the next 2 years?
+
+Q11: For how many years have you been writing code and/or programming?
+
+Q29: What is your current yearly compensation (approximate \$USD)?
+
+Q23: Select the title most similar to your current role
+
+Q18: Which of the following ML algorithms do you use on a regular basis?
+
+Q17: Which of the following machine learning frameworks do you use on a regular basis?
+
+Q20: Which of the following natural language processing (NLP) methods do you use on a regular basis?
+
+Q37: Do you use any of the following managed machine learning products on a regular basis?
+
+Each of the columns 17, 18, 20, & 37 have more than one parts to it based on the number of options given in the survey respectively.
+
+##### Hypothesis/Research Questions:
+
+1.  Does countries with highest number of Master's degrees show strong ML skill related environment network?
+2.  Which job role is popular among the ML & Data Science Master's Community?
+3.  How is the distribution of gender in the Master's community?
+
+##### Data Preparation
+
+```{r, warning=FALSE}
+# Create subsets of variables dedicated to machine learning skills/methods.
+
+algo <- c("Q18_1", "Q18_2",	"Q18_3",	"Q18_4",	"Q18_5",	"Q18_6",	"Q18_7",	"Q18_8",	"Q18_9",	"Q18_10")
+nlp <- c("Q20_1", "Q20_2", "Q20_3", "Q20_4", "Q20_5", "Q20_6")
+ml_frameworks <- c("Q17_1", "Q17_2", "Q17_3", "Q17_4", "Q17_5", "Q17_6", "Q17_7", "Q17_8", "Q17_9", "Q17_10")
+ml_products <- c("Q37_1", "Q37_2", "Q37_3", "Q37_4", "Q37_5", "Q37_6", "Q37_7", "Q37_8", "Q37_9", "Q37_10")
+
+# Get a separate dataframe with skills-related questions and convert to binary
+skills_questions <- c(algo, nlp, ml_frameworks, ml_products)
+df_skills <- data_2022[, skills_questions]
+df_skills <- data.frame(df_skills)
+
+
+# Create final dataframe with socio-demographic parameters and skills
+df_socdem <- data_2022[, c('Q2', 'Q3', 'Q4', 'Q5', 'Q8', 'Q11', 'Q29', 'Q23' )]
+df_fin <- merge(df_socdem, df_skills, by = 0)
+
+# Change names of countries
+df_fin$Q4 <- ifelse(df_fin$Q4 == "Iran, Islamic Republic of...", "Iran",
+                    ifelse(df_fin$Q4 == "Republic of Korea", "South Korea",
+                           ifelse(df_fin$Q4 == "United Kingdom of Great Britain and Northern Ireland", "United Kingdom",
+                                  ifelse(df_fin$Q4 == "United States of America", "USA", df_fin$Q4))))
+
+# Drop respondents who didn't indicate their country
+df_fin <- df_fin[!is.na(df_fin$Q4), ]
+
+# Master's or not Master's
+df_fin$Q8_ms <- ifelse(df_fin$Q8 == "Master’s degree", "Master's", "not Master's")
+df_fin$Q8_ms <- as.factor(df_fin$Q8_ms)
+
+
+# Salary to ordinal
+df_fin$Q29 <- factor(df_fin$Q29, ordered = TRUE, levels = c("$0-999", "1,000-1,999", "2,000-2,999", "3,000-3,999", "4,000-4,999",
+                                                          "5,000-7,499", "7,500-9,999", "10,000-14,999", "15,000-19,999",
+                                                          "20,000-24,999", "25,000-29,999", "30,000-39,999", "40,000-49,999",
+                                                          "50,000-59,999", "60,000-69,999", "70,000-79,999", "80,000-89,999",
+                                                          "90,000-99,999", "100,000-124,999", "125,000-149,999", "150,000-199,999",
+                                                          "200,000-249,999", "250,000-299,999", "300,000-500,000", "> $500,000"))
+
+# Experience to ordinal
+df_fin$Q11 <- factor(df_fin$Q11, ordered = TRUE, levels = c("< 1 years", "1-2 years", "3-5 years", "5-10 years", "10-20 years", "20+ years"))
+
+# Age to ordinal
+df_fin$Q2 <- factor(df_fin$Q2, ordered = TRUE, levels = c("18-21", "22-24", "25-29", "30-34", "35-39", "40-44", "45-49", "50-54", "55-59", "60-69", "70+"))
+
+# Variable with Top 20 countries
+top_countries <- names(sort(table(df_fin$Q4), decreasing = TRUE))[1:21]
+top_countries <- top_countries[top_countries != "Other"]
+df_fin$Q4_top <- ifelse(df_fin$Q4 %in% top_countries, df_fin$Q4, NA)
+
+df_fin <- df_fin[-1, ]
+```
+
+Each of the ML based questions are categorized in to four columns and a dataframe called df_skills. The socio-demo graphic columns are grouped into df_socdem dataframe and these two are merged into the final data set df_fin.
+
+A filter is applied to the Q8 column of df_fin for Master's degree community.
+
+As the Experience-Q11 & Age-Q2 have range values in their cells, they are converted to ordinal type.
+
+Going further, the network graph is created between countries and skills distribution. Hence the Countries are the nodes and Skills are the edges.
+
+### 2. Descriptive Statistics
+
+```{r, warning=FALSE}
+str(df_fin)
+```
+
+```{r, warning=FALSE}
+net <- select(df_fin,"Q4_top", "Q18_1", "Q18_2",  "Q18_3",  "Q18_4", "Q18_5", "Q18_6", "Q18_7", "Q18_8", "Q18_9", "Q18_10", "Q20_1", "Q20_2", "Q20_3", "Q20_4", "Q20_5", "Q17_1", "Q17_2", "Q17_3", "Q17_4", "Q17_5", "Q17_6", "Q17_7", "Q17_8", "Q17_9", "Q17_10", "Q37_1")
+
+# Convert the data to an igraph object
+g <- graph.data.frame(net)
+
+# Number of Components
+num_components <- components(g)$no
+cat("Number of Components:", num_components, "\n")
+
+# Proportion of Nodes in Giant Component and Proportion of Unconnected Nodes/Singletons
+giant_component <- max(components(g)$csize)
+proportion_giant_component <- giant_component / vcount(g)
+proportion_singletons <- sum(components(g)$csize == 1) / vcount(g)
+cat("Proportion of Nodes in Giant Component:", proportion_giant_component, "\n")
+cat("Proportion of Unconnected Nodes/Singletons:", proportion_singletons, "\n")
+
+# Check if the graph is fully connected
+if (num_components == 1) {
+  # Network Diameter
+  network_diameter <- diameter(g)
+  cat("Network Diameter:", network_diameter, "\n")
+
+  # Distribution of Network Geodesics
+  geodesics <- distances(g, mode = "all")
+  cat("Distribution of Network Geodesics:\n")
+  hist(geodesics, main = "Distribution of Network Geodesics", xlab = "Geodesic Length", ylab = "Frequency")
+} else {
+  cat("The graph is not fully connected.\n")
+}
+
+# Graph Density
+graph_density <- edge_density(g)
+cat("Graph Density:", graph_density, "\n")
+
+# Average Node Degree
+average_degree <- mean(degree(g))
+cat("Average Node Degree:", average_degree, "\n")
+
+# Degree Distribution
+degree_dist <- degree_distribution(g)
+cat("Degree Distribution:\n")
+plot(degree_dist, main = "Degree Distribution", xlab = "Degree", ylab = "Frequency")
+
+```
+
+-   There is only one component in the network, indicating that all nodes are connected in a single connected structure.
+
+-   The entire network consists of a single giant component, meaning that all nodes are part of the largest connected component.
+
+-   There are no unconnected nodes or singletons in the network, implying that all nodes have at least one connection to other nodes.
+
+-   The network diameter is 1, suggesting that the maximum shortest path between any two nodes in the network is only one. This indicates a highly connected and compact network structure.
+
+-   The specific details of the distribution of network geodesics are not provided, so further interpretation regarding the network's path lengths and connectivity patterns cannot be determined.
+
+-   The graph density is given as 47.4249. Graph density measures the proportion of possible edges that are present in the network. A density of 1 would indicate a complete graph, while a density of 0 would represent a completely sparse or disconnected graph.
+
+-   The average node degree is reported as 2086.696. This indicates that, on average, each node in the network is connected to approximately 2086.696 other nodes. A higher average node degree suggests a denser and more interconnected network.
+
+-   The degree distribution is not provided, so the specific distribution shape (e.g., power-law, normal, etc.) and additional information about the connectivity patterns of individual nodes in the network cannot be determined.
+
+Overall, the provided descriptive statistics suggest a highly connected network with a single giant component, where all nodes are connected and there are no unconnected nodes or singletons. The network has a small diameter, indicating short path lengths between nodes. The graph density and average node degree values suggest a relatively dense and interconnected network structure.
+
+### General Socio-Demographic portrait of a Masters degree Kagglers
+
+```{r, warning=FALSE}
+# Create dataframe for visualization of Q8
+df_ms_viz <- df_fin[df_fin$Q8_ms == "Master's", ]
+df_ms_viz_country <- as.data.frame(table(df_ms_viz$Q4_top))
+df_ms_viz_country <- df_ms_viz_country[order(-df_ms_viz_country$Freq), ]
+df_ms_viz_country_grey <- df_ms_viz_country
+df_ms_viz_country_grey$Freq <- c(rep(0, 4), df_ms_viz_country_grey$Freq[5:nrow(df_ms_viz_country_grey)])
+
+
+# Create dataframe for visualization of Q23
+df_ms_viz_role <- as.data.frame(table(df_ms_viz$Q23))
+df_ms_viz_role <- df_ms_viz_role[complete.cases(df_ms_viz_role), ]
+df_ms_viz_role <- df_ms_viz_role[order(-df_ms_viz_role$Freq), ]
+df_ms_viz_role_grey <- df_ms_viz_role
+df_ms_viz_role_grey$Freq <- c(rep(0, 4), df_ms_viz_role_grey$Freq[5:nrow(df_ms_viz_role_grey)])
+
+# Create dataframe for visualization of Q3
+df_ms_viz_gender <- as.data.frame(table(df_ms_viz$Q3))
+df_ms_viz_gender <- df_ms_viz_gender[order(-df_ms_viz_gender$Freq), ]
+df_ms_viz_gender_grey <- df_ms_viz_gender
+df_ms_viz_gender_grey$Freq <- c(rep(0, 4), df_ms_viz_gender_grey$Freq[5:nrow(df_ms_viz_gender_grey)])
+
+# Create plots
+par(mfrow = c(1, 3), mar = c(5, 4, 2, 0))
+```
+
+```{r, warning=FALSE}
+# Plot Country distribution for Q8
+plot_country <- ggplot(data = df_ms_viz_country, aes(x = Var1, y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity", color = "black") +
+  geom_text(aes(label = Freq), vjust = -0, size = 3.5, color = "black") +
+  coord_flip() +
+  labs(title = "Plot-1: Country distribution", x = NULL, y = "Frequency") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.text.x = element_text(angle = 1, hjust = 0.5, vjust = 0.5, size = 12),
+        axis.text.y = element_text(size = 10),
+        legend.position = "none")
+plot_country
+```
+
+Plot-1 visualizes the number of Masters degree holders or students who are currently pursuing Master's in the top-20 countries of the survey data.
+
+In absolute terms, India tangibly outperforms other countries by the amount Master's degree released. or going to be released. The second place is occupied by USA, followed by Brazil, Nigeria and Pakistan.
+
+```{r, warning=FALSE}
+# Plot Job title distribution for Q23
+plot_job_title <- ggplot(data = df_ms_viz_role, aes(x = Var1, y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity", color = "black") +
+  geom_text(aes(label = Freq), vjust = -0, size = 3.5, color = "black") +
+  coord_flip() +
+  labs(title = "Plot-2: Job title distribution", x = NULL, y = "Frequency") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.text.x = element_text(angle = 0, hjust = 1, vjust = 0.5, size = 10),
+        axis.text.y = element_text(size = 8),
+        legend.position = "none")
+plot_job_title
+```
+
+Plot-2 visualizes the current roles of the Master's degree kaggler's in the field of ML & Data Science.
+
+The empty cells indicate either they are current students or they didn't answer this particular question.
+
+However, if you don't consider the empty cell, the most popular job role in the Master's degree field is the Data Scientist followed by Data Analyst.
+
+```{r, warning=FALSE}
+# Plot Gender distribution for Q3
+plot_gender <- ggplot(data = df_ms_viz_gender, aes(x = Var1, y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity", color = "black") +
+  geom_text(aes(label = Freq), vjust = -0, size = 3.5, color = "black") +
+  coord_flip() +
+  labs(title = "Plot-3: Gender distribution", x = NULL, y = "Frequency") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.text.x = element_text(angle = 0, hjust = 1, vjust = 0.5, size = 12),
+        axis.text.y = element_text(size = 10),
+        legend.position = "none")
+
+plot_gender
+```
+
+Plot-3 above show that the number of males with Master's degree is roughly 3 times as high as women, meaning that even a highly academic environment retains this drastically pronounced gender-related disproportion.
+
+#### 3. Network Graph: How does the ML skill-related environment of Kaggle Master's degree community differ between nations:
+
+```{r, warning=FALSE}
+library(igraph)
+
+# Calculate the Jaccard similarity index for every pair of countries
+similarity_matrix <- matrix(nrow = length(top_countries), ncol = length(top_countries))
+
+for (i in 1:length(top_countries)) {
+    for (j in 1:length(top_countries)) {
+        df_i <- df_fin[df_fin$Q4_top == top_countries[i], c("Q18_1", "Q18_2",  "Q18_3",  "Q18_4", "Q18_5", "Q18_6", "Q18_7", "Q18_8", "Q18_9", "Q18_10", "Q20_1", "Q20_2", "Q20_3", "Q20_4", "Q20_5", "Q17_1", "Q17_2", "Q17_3", "Q17_4", "Q17_5", "Q17_6", "Q17_7", "Q17_8", "Q17_9", "Q17_10", "Q37_1")]
+        df_j <- df_fin[df_fin$Q4_top == top_countries[j], c("Q18_1", "Q18_2",  "Q18_3",  "Q18_4", "Q18_5", "Q18_6", "Q18_7", "Q18_8", "Q18_9", "Q18_10", "Q20_1", "Q20_2", "Q20_3", "Q20_4", "Q20_5", "Q17_1", "Q17_2", "Q17_3", "Q17_4", "Q17_5", "Q17_6", "Q17_7", "Q17_8", "Q17_9", "Q17_10", "Q37_1")]
+ similarity_matrix[i,j] <- length(intersect(df_i, df_j))/length(union(df_i, df_j))
+
+    }
+}
+
+# Create the graph from the adjacency matrix
+graph <- graph.adjacency(similarity_matrix, mode = "undirected", weighted = TRUE, diag = FALSE)
+V(graph)$name <- top_countries
+
+# Remove edges with weight 0
+graph <- delete_edges(graph, E(graph)[weight == 0])
+
+
+# Plot the graph
+plot(graph, vertex.size=10, vertex.label.cex=0.8, main = "Network of Countries")
+
+```
+
+According to the network graph here, the Machine Learning skill related environment doesn't differ much between the top-20 countries.
+
+However, considering India, USA, Brazil, Nigeria and Pakistan being the largest producers of Master's degree holders, one can assume that their skill range to be vast.
+
+But, this can be derived from the graph that the countries, India, Brazil, United Kingdom, France, Egypt and Columbia are closely knitted together and also strongly connected with all other countries. This means that these countries share a strong ML skill related environment amongst the Master's Community.
+
+Shockingly, USA is not in this list despite being the second highest in the Master's degree production.
+
+This answers our first research question.
+
+```{r, warning=FALSE}
+# Calculate the degree of each node (the number of edges incident to each node)
+node_degrees <- degree(graph)
+
+# Calculate the average path length (the average shortest path between all pairs of nodes)
+avg_path_length <- average.path.length(graph)
+
+# Calculate the diameter of the graph (the longest shortest path between any pair of nodes)
+diameter_graph <- diameter(graph)
+
+# Calculate the graph's density (the proportion of potential edges that are actual edges)
+graph_density <- edge_density(graph)
+
+# Calculate the graph's transitivity (the proportion of triangles to triplets in the graph)
+graph_transitivity <- transitivity(graph, type="global")
+
+# Calculate betweenness centrality for each node (a measure of centrality based on shortest paths)
+betweenness_centrality <- betweenness(graph)
+
+# Print network statistics
+print(paste("Average path length: ", avg_path_length))
+print(paste("Diameter of the graph: ", diameter_graph))
+print(paste("Graph density: ", graph_density))
+print(paste("Global transitivity: ", graph_transitivity))
+
+# Convert centrality measures to data frames for easier viewing
+node_degrees <- as.data.frame(node_degrees)
+colnames(node_degrees) <- c("Node Degree")
+print(node_degrees)
+
+betweenness_centrality <- as.data.frame(betweenness_centrality)
+colnames(betweenness_centrality) <- c("Betweenness Centrality")
+print(betweenness_centrality)
+
+```
+
+-   Average path length: 0.5
+
+The average path length is a measure of how "far" nodes are from each other in a graph. In this case, the average path length of 0.5 indicates that, on average, it takes 0.5 steps to reach any other node in the graph. A lower average path length generally suggests a more connected or compact graph.
+
+-   Diameter of the graph: 0.5
+
+The diameter of a graph is the longest shortest path between any pair of nodes. In this case, the diameter of 0.5 suggests that the longest shortest path in the graph is 0.5 units. A smaller diameter indicates that the graph is relatively small or well-connected.
+
+-   Graph density: 1
+
+Graph density is a measure of how many edges are present in the graph compared to the total possible number of edges. A density of 1 indicates that the graph is complete, meaning that every pair of nodes is connected by an edge. In a complete graph, the density is at its maximum.
+
+-   Global transitivity: 1
+
+Global transitivity, also known as the clustering coefficient, measures the degree to which nodes in a graph tend to cluster together. A value of 1 suggests that every node in the graph is fully connected to its neighbors, forming closed triangles. It indicates a high level of clustering or transitivity in the graph.
+
+In summary, the provided graph has a relatively low average path length and diameter, indicating good connectivity. The graph is also complete with a density of 1, meaning that all possible edges are present. Furthermore, the graph exhibits a high level of clustering or transitivity with a global transitivity of 1.
+
+#### 4. Network Statistics
+
+```{r, warning=FALSE}
+library(igraph)
+
+# Function to calculate different measures and identify prominent nodes
+identifyProminentNodes <- function(df, G) {
+  # Measure of popularity/status
+  # In-degree centrality
+  in_degree <- degree(G, mode = "in")
+  max_in_degree <- max(in_degree)
+  min_in_degree <- min(in_degree)
+  high_in_degree_nodes <- V(G)[in_degree == max_in_degree]
+  low_in_degree_nodes <- V(G)[in_degree == min_in_degree]
+  
+  # Out-degree centrality
+  out_degree <- degree(G, mode = "out")
+  max_out_degree <- max(out_degree)
+  min_out_degree <- min(out_degree)
+  high_out_degree_nodes <- V(G)[out_degree == max_out_degree]
+  low_out_degree_nodes <- V(G)[out_degree == min_out_degree]
+  
+  # Bonachich power
+  bonachich_power <- bonpow(G)
+  max_bonachich_power <- max(bonachich_power)
+  min_bonachich_power <- min(bonachich_power)
+  high_bonachich_power_nodes <- V(G)[bonachich_power == max_bonachich_power]
+  low_bonachich_power_nodes <- V(G)[bonachich_power == min_bonachich_power]
+  
+  # Eigenvector centrality
+  eigenvector_centrality <- eigen_centrality(G)$vector
+  max_eigenvector_centrality <- max(eigenvector_centrality)
+  min_eigenvector_centrality <- min(eigenvector_centrality)
+  high_eigenvector_centrality_nodes <- V(G)[eigenvector_centrality == max_eigenvector_centrality]
+  low_eigenvector_centrality_nodes <- V(G)[eigenvector_centrality == min_eigenvector_centrality]
+  
+  # Derived/reflected centrality
+  derived_centrality <- (in_degree + out_degree) / 2
+  max_derived_centrality <- max(derived_centrality)
+  min_derived_centrality <- min(derived_centrality)
+  high_derived_centrality_nodes <- V(G)[derived_centrality == max_derived_centrality]
+  low_derived_centrality_nodes <- V(G)[derived_centrality == min_derived_centrality]
+  
+  # Measure of role/power
+  # Constraint
+  constraint <- constraint(G)
+  max_constraint <- max(constraint)
+  min_constraint <- min(constraint)
+  high_constraint_nodes <- V(G)[constraint == max_constraint]
+  low_constraint_nodes <- V(G)[constraint == min_constraint]
+  
+  # Betweenness centrality
+  betweenness_centrality <- betweenness(G)
+  max_betweenness_centrality <- max(betweenness_centrality)
+  min_betweenness_centrality <- min(betweenness_centrality)
+  high_betweenness_centrality_nodes <- V(G)[betweenness_centrality == max_betweenness_centrality]
+  low_betweenness_centrality_nodes <- V(G)[betweenness_centrality == min_betweenness_centrality]
+  
+  # Edge betweenness (brokerage)
+  edge_betweenness <- edge_betweenness(G)
+  max_edge_betweenness <- max(edge_betweenness)
+  min_edge_betweenness <- min(edge_betweenness)
+  high_brokerage_nodes <- ends(G, E(G)[edge_betweenness == max_edge_betweenness])
+  low_brokerage_nodes <- ends(G, E(G)[edge_betweenness == min_edge_betweenness])
+  
+  # Create a list of results
+  results <- list(
+    in_degree = list(max = max_in_degree, min = min_in_degree, high_nodes = high_in_degree_nodes, low_nodes = low_in_degree_nodes),
+    out_degree = list(max = max_out_degree, min = min_out_degree, high_nodes = high_out_degree_nodes, low_nodes = low_out_degree_nodes),
+    bonachich_power = list(max = max_bonachich_power, min = min_bonachich_power, high_nodes = high_bonachich_power_nodes, low_nodes = low_bonachich_power_nodes),
+    eigenvector_centrality = list(max = max_eigenvector_centrality, min = min_eigenvector_centrality, high_nodes = high_eigenvector_centrality_nodes, low_nodes = low_eigenvector_centrality_nodes),
+    derived_centrality = list(max = max_derived_centrality, min = min_derived_centrality, high_nodes = high_derived_centrality_nodes, low_nodes = low_derived_centrality_nodes),
+    constraint = list(max = max_constraint, min = min_constraint, high_nodes = high_constraint_nodes, low_nodes = low_constraint_nodes),
+    betweenness_centrality = list(max = max_betweenness_centrality, min = min_betweenness_centrality, high_nodes = high_betweenness_centrality_nodes, low_nodes = low_betweenness_centrality_nodes),
+    brokerage = list(max = max_edge_betweenness, min = min_edge_betweenness, high_nodes = high_brokerage_nodes, low_nodes = low_brokerage_nodes)
+  )
+  
+  return(results)
+}
+
+results <- identifyProminentNodes(net, g)
+
+# Print the results
+print(results)
+
+```
+
+Based on the provided results, let's interpret the measures of popularity/status and role/power for the identified prominent nodes:
+
+1.  In-degree centrality:
+
+    -   Maximum in-degree: 12659
+
+    -   Minimum in-degree: 0
+
+    -   High in-degree nodes: No nodes identified
+
+    -   Low in-degree nodes: India, China, Taiwan, Brazil, USA, Mexico, Indonesia, Pakistan, United Kingdom, South Korea, France, Turkey, Egypt, Nigeria, Spain, Bangladesh, Japan, Colombia, Russia, Canada
+
+Interpretation: The maximum in-degree indicates that there is a node with the highest number of incoming connections. The minimum in-degree of 0 suggests that some nodes in the network do not have any incoming connections. The identified low in-degree nodes represent countries or concepts with relatively fewer incoming connections.
+
+2.  Out-degree centrality:
+
+    -   Maximum out-degree: 8792
+
+    -   Minimum out-degree: 0
+
+    -   High out-degree nodes: India
+
+    -   Low out-degree nodes: Linear or Logistic Regression
+
+Interpretation: The maximum out-degree suggests that India has the highest number of outgoing connections. The minimum out-degree indicates that some nodes do not have any outgoing connections. The identified low out-degree node, "Linear or Logistic Regression," may represent a concept or skill that is less frequently mentioned in the dataset.
+
+3.  Bonachich power:
+
+    -   Maximum Bonachich power: 3.914278
+
+    -   Minimum Bonachich power: 0
+
+    -   High Bonachich power nodes: India
+
+    -   Low Bonachich power nodes: Linear or Logistic Regression
+
+Interpretation: The Bonachich power measures the power or influence of a node in the network. The maximum Bonachich power indicates that India has the highest power or influence in the network. The identified low Bonachich power node, "Linear or Logistic Regression," may represent a concept or skill that has relatively less power or influence in the network.
+
+4.  Eigenvector centrality:
+
+    -   Maximum eigenvector centrality: 1
+
+    -   Minimum eigenvector centrality: 0.02743026
+
+    -   High eigenvector centrality nodes: India
+
+    -   Low eigenvector centrality nodes: Taiwan
+
+Interpretation: Eigenvector centrality measures the influence of a node based on both its direct connections and the influence of its neighbors. The maximum eigenvector centrality indicates that India has the highest influence in the network. The identified low eigenvector centrality node, Taiwan, may have relatively less influence compared to other nodes.
+
+5.  Derived centrality:
+
+    -   Maximum derived centrality: 6329.5
+
+    -   Minimum derived centrality: 121
+
+    -   High derived centrality nodes: No nodes identified
+
+    -   Low derived centrality nodes: Taiwan
+
+Interpretation: Derived centrality is calculated as the average of in-degree and out-degree centrality. The maximum derived centrality suggests the presence of a node with the highest average degree centrality. The minimum derived centrality indicates the presence of nodes with relatively lower average degree centrality. The identified low derived centrality node, Taiwan, has a lower average degree centrality compared to other nodes.
+
+6.  Constraint:
+
+    -   Maximum constraint: 0.5489773
+
+    -   Minimum constraint: 0.201266
+
+    -   High constraint nodes: France
+
+    -   Low constraint nodes: Linear or Logistic Regression
+
+Interpretation: Constraint measures the extent to which a node is constrained by its connections. The maximum constraint suggests that France has the highest level of constraint, indicating its position in the network. The identified low constraint node, "Linear or Logistic Regression," may represent a concept or skill.
+
+#### 5. Community Detection
+
+```{r, warning=FALSE}
+library(igraph)
+
+# Function to detect communities using Louvain method
+detectCommunities <- function(g) {
+  # Convert graph to undirected
+  G_undirected <- as.undirected(g, mode = "collapse")
+  
+  # Apply Louvain method for community detection
+  communities <- cluster_louvain(G_undirected)
+  return(communities)
+}
+
+# Detect communities
+communities <- detectCommunities(g)
+
+# Print community membership for each node
+print(membership(communities))
+
+
+```
+
+-   Nodes: India, China, Taiwan, Brazil, USA, Mexico, Indonesia, Pakistan, United Kingdom, South Korea, France, Turkey, Egypt, Nigeria, Spain, Bangladesh, Japan, Colombia, Russia, Canada, Linear or Logistic Regression
+
+-   Interpretation: All of these nodes belong to the same community, indicating a cohesive group or core in the network. These nodes are densely connected within themselves and share common characteristics or interactions.
+
+The presence of a single community suggests a strong interconnectedness and shared characteristics among these nodes. The behavioral implications may include strong collaboration, information exchange, and potentially shared goals or interests among these countries and concepts represented by the nodes. The influential nodes in this community, such as India, China, and the USA, may play central roles in shaping the dynamics and interactions within the community.
+
+It's worth noting that the interpretation is based on the assumption that the Louvain method successfully captured the underlying community structure in the network. However, it's important to consider the context and specific characteristics of the network, as well as validate the community structure using additional methods or techniques.
+
+Hypothesis Testing:
+
+In section -3 of this code book answers our main research question or the hypothesis that, Countries with higher number of Master's degrees doesn't directly imply their strong Machine Learning skills network.
+
+But according to the community detection results of the graph, it is clear that the nodes in the graph are equally distributed or they follow a linear/logistic regression. Hence it won't be possible to identify a closed group of nodes or countries in the graph at this stage of the project.
+
+However, I would continue to work on the data to define more functions to plot the similarity distribution of skills of these countries.
+
+#### Challenges & Conclusion:
+
+-   The first challenge is with understanding the raw data of the survey with 23998 rows and and 296 columns manipulating it according to the needs of my project where each question in the skills section has atleast 5 parts to it.
+
+-   Second challenge is with respect to the creation of similarity matrix and graph generation for ML skill-related environment between nations. The graph is not an accurate result of what I've imagined it to be and as the node degree is same for all the nodes, it became quite impossible to prove which group of countries are closely related in the skill distribution.
+
+-   This study requires further deep analysis by defining specific functions to accurately create the similarity between the nodes & edges.
+
+-   However, despite of all these challenges, I am quite happy about the follwing results I got to find through this study.
+
+-   The top 22 highest Master's degree producing countries are India, USA, Brazil, Nigeria, Pakistan, China, Japan, France, Mexico, Canada, Spain, Russia, Turkey, Columbia, Indonesia, United Kingdom, Taiwan, Bangladesh, Turkey, South Korea, Japan, Egypt.
+
+-   Data Scientist and Data Analyst are the most prominent roles in the ML & Data Science Master's community.
+
+-   Male proportion is roughly 3 times higher than women proportion in the ML & Data Science Master's community.
+
+#### References:
+
+-   2022 Kaggle Machine Learning & Data Science Survey <https://www.kaggle.com/competitions/kaggle-survey-2022/overview>
+
+-   <https://www.urban.org/sites/default/files/publication/99501/the_rise_of_masters_degrees_1.pdf>
